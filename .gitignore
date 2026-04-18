@@ -1,0 +1,4 @@
+__pycache__/
+scrs_smallai_venv/
+setup_venv.txt
+.env
