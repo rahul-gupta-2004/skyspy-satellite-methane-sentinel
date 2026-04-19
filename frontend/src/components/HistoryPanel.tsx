@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export type LeakHistoryItem = {
   id: string;
   locationName: string;
@@ -18,11 +20,28 @@ const severityColors: Record<LeakHistoryItem["severity"], string> = {
 };
 
 export default function HistoryPanel({ items }: HistoryPanelProps) {
-  return (
-    <section className="glass-panel history-panel">
-      <header className="panel-title">Leak History</header>
+  const [isExpanded, setIsExpanded] = useState(false);
 
-      <div className="history-table-wrap">
+  return (
+    <section className="glass-panel history-panel" style={{ cursor: "pointer" }}>
+      <header 
+        className="panel-title" 
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center",
+          marginBottom: isExpanded ? "8px" : "0"
+        }}
+      >
+        <span>Leak History ({items.length})</span>
+        <span style={{ fontSize: "10px", color: "#64748b" }}>
+          {isExpanded ? "Collapse ▲" : "Click to View ▼"}
+        </span>
+      </header>
+
+      {isExpanded && (
+        <div className="history-table-wrap" style={{ animation: "fadeIn 0.2s ease-out" }}>
         <table className="history-table">
           <thead>
             <tr>
@@ -63,7 +82,8 @@ export default function HistoryPanel({ items }: HistoryPanelProps) {
             ))}
           </tbody>
         </table>
-      </div>
+        </div>
+      )}
     </section>
   );
 }

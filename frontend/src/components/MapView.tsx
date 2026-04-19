@@ -34,7 +34,8 @@ export type LeakMapMarker = {
 
 type MapViewProps = {
   currentUserId: string;
-  onLocationsChange?: (locations: LocationRecord[]) => void;
+  locations: LocationRecord[];
+  onLocationsChange?: () => void;
   onConsoleLog?: (message: string) => void;
   leakMarkers?: LeakMapMarker[];
 };
@@ -81,51 +82,12 @@ function leakSeverityClass(severity: LeakMapMarker["severity"]): string {
 
 export default function MapView({
   currentUserId,
+  locations,
   onLocationsChange,
   onConsoleLog,
   leakMarkers = [],
 }: MapViewProps) {
-  const [locations, setLocations] = useState<LocationRecord[]>([]);
   const [clickedPoint, setClickedPoint] = useState<ClickedPoint | null>(null);
-
-  const publishLocations = useCallback(
-    (rows: LocationRecord[]) => {
-      setLocations(rows);
-      onLocationsChange?.(rows);
-    },
-    [onLocationsChange],
-  );
-
-  const fetchLocations = useCallback(async () => {
-    if (!supabase) return;
-
-    const { data, error } = await supabase
-      .from("locations")
-      .select("id, name, latitude, longitude, industry_type, is_active, created_by")
-      .eq("created_by", currentUserId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      onConsoleLog?.(`Failed to fetch user locations: ${error.message}`);
-      return;
-    }
-
-    const rows = (data ?? []).map((row) => ({
-      id: String(row.id),
-      name: String(row.name),
-      latitude: Number(row.latitude),
-      longitude: Number(row.longitude),
-      industry_type: String(row.industry_type ?? "industrial"),
-      is_active: Boolean(row.is_active),
-      created_by: String(row.created_by),
-    }));
-
-    publishLocations(rows);
-  }, [currentUserId, onConsoleLog, publishLocations]);
-
-  useEffect(() => {
-    void fetchLocations();
-  }, [fetchLocations]);
 
   const handleAddLocation = useCallback(
     async (lat: number, lon: number) => {
@@ -133,7 +95,7 @@ export default function MapView({
 
       const { error } = await supabase.from("locations").insert({
         created_by: currentUserId,
-        name: "Industrial Site",
+        name: "Methane Monitoring Node",
         latitude: lat,
         longitude: lon,
         industry_type: "industrial",
@@ -146,17 +108,33 @@ export default function MapView({
       }
 
       onConsoleLog?.(`Saved location [${lat.toFixed(4)}, ${lon.toFixed(4)}]`);
-      await fetchLocations();
+      await onLocationsChange?.();
     },
-    [currentUserId, fetchLocations, onConsoleLog],
+    [currentUserId, onConsoleLog, onLocationsChange],
+  );
+
+  const handleDeleteLocation = useCallback(
+    async (id: string) => {
+      if (!supabase) return;
+
+      const { error } = await supabase.from("locations").delete().eq("id", id);
+
+      if (error) {
+        onConsoleLog?.(`Failed to delete location: ${error.message}`);
+        return;
+      }
+
+      onConsoleLog?.(`Deleted location record #${id}`);
+      await onLocationsChange?.();
+    },
+    [onConsoleLog, onLocationsChange],
   );
 
   const handleMapClick = useCallback(
     (lat: number, lon: number) => {
       setClickedPoint({ lat, lon });
-      void handleAddLocation(lat, lon);
     },
-    [handleAddLocation],
+    [],
   );
 
   const activeCount = useMemo(
@@ -197,12 +175,32 @@ export default function MapView({
               />
             </MarkerContent>
             <MarkerPopup closeButton>
-              <div style={{ minWidth: 190, color: "#dbe7ff" }}>
+              <div style={{ minWidth: 190, color: "#1e293b" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{location.name}</div>
                 <div>Latitude: {location.latitude.toFixed(5)}</div>
                 <div>Longitude: {location.longitude.toFixed(5)}</div>
                 <div>Type: {location.industry_type}</div>
-                <div>Status: {location.is_active ? "Active" : "Inactive"}</div>
+                <div style={{ marginBottom: 10 }}>Status: {location.is_active ? "Active" : "Inactive"}</div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteLocation(location.id)}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    background: "rgba(239, 68, 68, 0.2)",
+                    color: "#fca5a5",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    transition: "all 0.2s"
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.3)"}
+                  onMouseOut={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)"}
+                >
+                  Remove Location
+                </button>
               </div>
             </MarkerPopup>
           </MapMarker>
@@ -214,7 +212,7 @@ export default function MapView({
               <div className={leakSeverityClass(marker.severity)} />
             </MarkerContent>
             <MarkerPopup closeButton>
-              <div style={{ minWidth: 210, color: "#dbe7ff" }}>
+              <div style={{ minWidth: 210, color: "#1e293b" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>New Leak Detected</div>
                 <div>Location: {marker.locationName}</div>
                 <div>Methane: {marker.methaneLevel.toFixed(2)}</div>
@@ -241,10 +239,33 @@ export default function MapView({
               />
             </MarkerContent>
             <MarkerPopup>
-              <div style={{ minWidth: 170, color: "#dbe7ff" }}>
+              <div style={{ minWidth: 170, color: "#1e293b" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>Selected Coordinates</div>
                 <div>Latitude: {clickedPoint.lat.toFixed(5)}</div>
-                <div>Longitude: {clickedPoint.lon.toFixed(5)}</div>
+                <div style={{ marginBottom: 10 }}>Longitude: {clickedPoint.lon.toFixed(5)}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddLocation(clickedPoint.lat, clickedPoint.lon);
+                    setClickedPoint(null);
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    background: "rgba(34, 197, 94, 0.2)",
+                    color: "#86efac",
+                    border: "1px solid rgba(34, 197, 94, 0.3)",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    transition: "all 0.2s"
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.background = "rgba(34, 197, 94, 0.3)"}
+                  onMouseOut={(e) => e.currentTarget.style.background = "rgba(34, 197, 94, 0.2)"}
+                >
+                  Monitor This Site
+                </button>
               </div>
             </MarkerPopup>
           </MapMarker>
