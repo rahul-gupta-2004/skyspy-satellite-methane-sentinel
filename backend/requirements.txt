@@ -3,3 +3,4 @@ typing
 scikit-learn
 pandas
 numpy
+httpx

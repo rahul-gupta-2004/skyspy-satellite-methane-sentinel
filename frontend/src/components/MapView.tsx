@@ -20,10 +20,23 @@ export type LocationRecord = {
   created_by: string;
 };
 
+export type LeakMapMarker = {
+  id: string;
+  locationId: string;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+  methaneLevel: number;
+  confidenceScore: number;
+  severity: "low" | "medium" | "high";
+  detectedAt: string;
+};
+
 type MapViewProps = {
   currentUserId: string;
   onLocationsChange?: (locations: LocationRecord[]) => void;
   onConsoleLog?: (message: string) => void;
+  leakMarkers?: LeakMapMarker[];
 };
 
 type ClickedPoint = {
@@ -60,7 +73,18 @@ function markerShadow(isActive: boolean): string {
     : "0 0 0 2px rgba(245, 158, 11, 0.25), 0 8px 20px rgba(245, 158, 11, 0.35)";
 }
 
-export default function MapView({ currentUserId, onLocationsChange, onConsoleLog }: MapViewProps) {
+function leakSeverityClass(severity: LeakMapMarker["severity"]): string {
+  if (severity === "high") return "leak-marker leak-marker-high";
+  if (severity === "medium") return "leak-marker leak-marker-medium";
+  return "leak-marker leak-marker-low";
+}
+
+export default function MapView({
+  currentUserId,
+  onLocationsChange,
+  onConsoleLog,
+  leakMarkers = [],
+}: MapViewProps) {
   const [locations, setLocations] = useState<LocationRecord[]>([]);
   const [clickedPoint, setClickedPoint] = useState<ClickedPoint | null>(null);
 
@@ -179,6 +203,24 @@ export default function MapView({ currentUserId, onLocationsChange, onConsoleLog
                 <div>Longitude: {location.longitude.toFixed(5)}</div>
                 <div>Type: {location.industry_type}</div>
                 <div>Status: {location.is_active ? "Active" : "Inactive"}</div>
+              </div>
+            </MarkerPopup>
+          </MapMarker>
+        ))}
+
+        {leakMarkers.map((marker) => (
+          <MapMarker key={`leak-${marker.id}`} latitude={marker.latitude} longitude={marker.longitude}>
+            <MarkerContent>
+              <div className={leakSeverityClass(marker.severity)} />
+            </MarkerContent>
+            <MarkerPopup closeButton>
+              <div style={{ minWidth: 210, color: "#dbe7ff" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>New Leak Detected</div>
+                <div>Location: {marker.locationName}</div>
+                <div>Methane: {marker.methaneLevel.toFixed(2)}</div>
+                <div>Confidence: {marker.confidenceScore.toFixed(1)}%</div>
+                <div>Severity: {marker.severity}</div>
+                <div>Detected: {new Date(marker.detectedAt).toLocaleString()}</div>
               </div>
             </MarkerPopup>
           </MapMarker>

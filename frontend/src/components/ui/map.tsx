@@ -524,6 +524,7 @@ function PopupCloseButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Close popup"
+      title="Close popup"
       className="focus-visible:ring-ring hover:bg-muted text-foreground absolute top-0.5 right-0.5 z-10 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm transition-colors focus:outline-none focus-visible:ring-2"
     >
       <X className="size-3.5" />
@@ -761,6 +762,7 @@ function ControlButton({
     <button
       onClick={onClick}
       aria-label={label}
+      title={label}
       type="button"
       className={cn(
         "flex size-8 items-center justify-center transition-all",

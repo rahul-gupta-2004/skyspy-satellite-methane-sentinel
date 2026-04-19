@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, RealtimePostgresInsertPayload, Session } from "@supabase/supabase-js";
 import axios from "axios";
-import MapView, { type LocationRecord } from "./components/MapView.tsx";
+import MapView, { type LeakMapMarker, type LocationRecord } from "./components/MapView.tsx";
 import HistoryPanel, { type LeakHistoryItem } from "./components/HistoryPanel.tsx";
 import ConsolePanel from "./components/ConsolePanel.tsx";
 import ModelHealth from "./components/ModelHealth.tsx";
@@ -26,15 +26,27 @@ type LeakLogInsert = {
   severity: "low" | "medium" | "high";
 };
 
+type LeakLogRow = {
+  id: string | number;
+  location_id: string | number;
+  user_id: string;
+  methane_level: number;
+  confidence_score: number;
+  severity: "low" | "medium" | "high";
+  detected_at: string;
+};
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [locations, setLocations] = useState<LocationRecord[]>([]);
   const [historyItems, setHistoryItems] = useState<LeakHistoryItem[]>([]);
+  const [leakMarkers, setLeakMarkers] = useState<LeakMapMarker[]>([]);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [modelHealthScore, setModelHealthScore] = useState(0.72);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
 
   const appendLog = useCallback((message: string) => {
     setConsoleLogs((prev) => [...prev, message]);
@@ -79,6 +91,12 @@ function App() {
     },
     [appendLog, locations],
   );
+
+  useEffect(() => {
+    if (!notification) return;
+    const id = window.setTimeout(() => setNotification(null), 2600);
+    return () => window.clearTimeout(id);
+  }, [notification]);
 
   useEffect(() => {
     if (!supabase) {
@@ -142,6 +160,163 @@ function App() {
       isMounted = false;
     };
   }, [appendLog, session]);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+
+    const client = supabase;
+    const channel = client
+      .channel(`leak_logs_inserts_${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "leak_logs",
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        (payload: RealtimePostgresInsertPayload<LeakLogRow>) => {
+          const row = payload.new;
+          const locationId = String(row.location_id);
+          const matchedLocation = locations.find((location) => location.id === locationId);
+          const locationName = matchedLocation?.name ?? "Unknown location";
+
+          setHistoryItems((prev) => [
+            {
+              id: String(row.id),
+              locationName,
+              methaneLevel: Number(row.methane_level),
+              confidenceScore: Number(row.confidence_score),
+              severity: row.severity,
+              detectedAt: row.detected_at,
+            },
+            ...prev,
+          ]);
+
+          if (matchedLocation) {
+            setLeakMarkers((prev) => [
+              {
+                id: String(row.id),
+                locationId,
+                locationName,
+                latitude: matchedLocation.latitude,
+                longitude: matchedLocation.longitude,
+                methaneLevel: Number(row.methane_level),
+                confidenceScore: Number(row.confidence_score),
+                severity: row.severity,
+                detectedAt: row.detected_at,
+              },
+              ...prev,
+            ].slice(0, 100));
+          }
+
+          setNotification("New Leak Detected");
+          appendLog(`Realtime alert -> ${locationName} leak recorded.`);
+        },
+      )
+      .subscribe();
+
+    let cancelled = false;
+    let running = false;
+
+    const runBackgroundScan = async () => {
+      if (running || cancelled) return;
+      running = true;
+
+      try {
+        const { data: userLocations, error: locationError } = await client
+          .from("locations")
+          .select("id, name, latitude, longitude, industry_type, is_active, created_by")
+          .eq("created_by", session.user.id);
+
+        if (locationError) {
+          appendLog(`Background scan skipped: ${locationError.message}`);
+          return;
+        }
+
+        const normalizedLocations = (userLocations ?? []).map((location) => ({
+          id: String(location.id),
+          name: String(location.name),
+          latitude: Number(location.latitude),
+          longitude: Number(location.longitude),
+          industry_type: String(location.industry_type ?? "industrial"),
+          is_active: Boolean(location.is_active),
+          created_by: String(location.created_by),
+        }));
+
+        setLocations(normalizedLocations);
+
+        if (normalizedLocations.length === 0) {
+          appendLog("Background scan idle: no saved locations.");
+          return;
+        }
+
+        const randomIndex = Math.floor(Math.random() * normalizedLocations.length);
+        const randomLocation = normalizedLocations[randomIndex];
+
+        appendLog(
+          `Background scan -> ${randomLocation.name} (${randomLocation.latitude.toFixed(3)}, ${randomLocation.longitude.toFixed(3)})`,
+        );
+
+        const response = await axios.get<DetectResponse>("http://127.0.0.1:8000/detect", {
+          params: {
+            lat: randomLocation.latitude,
+            lon: randomLocation.longitude,
+          },
+        });
+
+        const score = response.data.metrics?.silhouette_score;
+        if (typeof score === "number") {
+          setModelHealthScore(score);
+        }
+
+        const leaks = response.data.detected_leaks ?? [];
+        if (leaks.length === 0) {
+          appendLog(`Background scan complete: no anomaly at ${randomLocation.name}`);
+          return;
+        }
+
+        let insertedAnyLeak = false;
+        for (const leak of leaks) {
+          const payload: LeakLogInsert = {
+            location_id: randomLocation.id,
+            user_id: session.user.id,
+            methane_level: leak.methane,
+            confidence_score: leak.confidence,
+            severity: severityFromLeak(leak.methane, leak.confidence),
+          };
+
+          const { error: insertError } = await client.from("leak_logs").insert(payload);
+          if (insertError) {
+            appendLog(`Background leak save failed: ${insertError.message}`);
+          } else {
+            insertedAnyLeak = true;
+          }
+        }
+
+        if (insertedAnyLeak) {
+          appendLog(`Anomaly detected at location ${randomLocation.name}`);
+          await fetchLeakHistory(session.user.id, normalizedLocations);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown background scan error";
+        appendLog(`Background scan failed: ${message}`);
+      } finally {
+        running = false;
+      }
+    };
+
+    void runBackgroundScan();
+    const intervalId = window.setInterval(() => {
+      void runBackgroundScan();
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      void client.removeChannel(channel);
+    };
+  }, [appendLog, fetchLeakHistory, locations, session]);
 
   const handleRunAudit = async () => {
     if (!supabase || !session) return;
@@ -318,8 +493,11 @@ function App() {
           currentUserId={session.user.id}
           onLocationsChange={handleLocationsChange}
           onConsoleLog={appendLog}
+          leakMarkers={leakMarkers}
         />
       </section>
+
+      {notification && <div className="dashboard-toast">{notification}</div>}
 
       <aside className="dashboard-side-panel">
         <div className="dashboard-auth-card">
