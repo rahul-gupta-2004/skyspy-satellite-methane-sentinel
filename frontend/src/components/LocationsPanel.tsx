@@ -12,7 +12,6 @@ export default function LocationsPanel({
   locations,
   historyItems,
   onDeleteLocation,
-  onUpdateLocation,
 }: LocationsPanelProps) {
   const getLatestLeak = (locationName: string) => {
     return historyItems.find(item => item.locationName === locationName);
@@ -21,13 +20,13 @@ export default function LocationsPanel({
   return (
     <section className="glass-panel locations-panel" style={{ minHeight: "150px", width: "100%", overflow: "hidden" }}>
       <header className="panel-title">Monitoring Nodes ({locations.length})</header>
-      
-      <div 
-        className="locations-slider" 
-        style={{ 
-          display: "flex", 
-          gap: "12px", 
-          overflowX: "auto", 
+
+      <div
+        className="locations-slider"
+        style={{
+          display: "flex",
+          gap: "12px",
+          overflowX: "auto",
           padding: "4px 4px 12px",
           width: "100%",
           minWidth: 0,
@@ -40,18 +39,18 @@ export default function LocationsPanel({
             No monitoring sites added. Click on the map to add one.
           </div>
         )}
-        
+
         {locations.map((loc) => (
-          <div 
-            key={loc.id} 
+          <div
+            key={loc.id}
             className="location-item"
-            style={{ 
+            style={{
               minWidth: "240px",
               flex: "0 0 240px",
               scrollSnapAlign: "start",
-              background: "rgba(30, 41, 59, 0.5)", 
-              border: "1px solid rgba(148, 163, 184, 0.2)", 
-              borderRadius: "12px", 
+              background: "rgba(30, 41, 59, 0.5)",
+              border: "1px solid rgba(148, 163, 184, 0.2)",
+              borderRadius: "12px",
               padding: "16px",
               boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
             }}
@@ -82,19 +81,19 @@ export default function LocationsPanel({
                 Delete
               </button>
             </div>
-            
+
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <div style={{ 
-                fontSize: "10px", 
-                padding: "2px 6px", 
-                borderRadius: "4px", 
+              <div style={{
+                fontSize: "10px",
+                padding: "2px 6px",
+                borderRadius: "4px",
                 background: loc.is_active ? "rgba(34, 197, 94, 0.1)" : "rgba(245, 158, 11, 0.1)",
                 color: loc.is_active ? "#86efac" : "#fcd34d",
                 border: `1px solid ${loc.is_active ? "rgba(34, 197, 94, 0.2)" : "rgba(245, 158, 11, 0.2)"}`
               }}>
                 {loc.is_active ? "ACTIVE" : "PAUSED"}
               </div>
-              
+
               {(() => {
                 const latest = getLatestLeak(loc.name);
                 if (!latest) return null;
