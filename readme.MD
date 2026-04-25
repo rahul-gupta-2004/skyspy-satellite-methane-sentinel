@@ -53,3 +53,11 @@ Methane is a potent greenhouse gas, and early detection of leaks is critical for
 ## Vision and Impact
 
 SkySpy aims to bridge the gap between satellite data and actionable industrial insights. By making methane detection accessible and automated, we empower organizations to achieve their sustainability goals and protect the atmosphere from fugitive emissions.
+
+## Outputs
+
+### 1. Login Interface
+![Login Interface](outputs/1-login.png)
+
+### 2. Monitoring Dashboard
+![Monitoring Dashboard](outputs/2-dashboard.png)
